@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#4c9aff">
 <meta name="description" content="Free browser-based graphing calculator with algebra, calculus, data, and 3D tools.">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <style>
   :root{
     --bg:#0b0e15; --panel:#141821; --panel2:#1b2030; --panel3:#232a3d;
@@ -759,8 +759,8 @@
   </div>
 </div>
 
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/algebrite@1.4.0/algebrite.bundle-for-browser.min.js"></script>
 
@@ -866,7 +866,6 @@ document.getElementById('btnSettings').addEventListener('click', () => {
 document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('open'));
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.remove('open'); });
 
-/* FIXED: setting key map so complex mode persists */
 const SETTING_KEYS = {
   setBg:'bg', setCursor:'cursor', setText:'text', setAnim:'anim',
   setComplex:'complexMode', setHiContrast:'hiContrast', setKatex:'katex'
@@ -964,6 +963,7 @@ function preprocess(src){
     .replace(/π/g,'pi').replace(/θ/g,'theta').replace(/√/g,'sqrt')
     .replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/≠/g,'!=')
     .replace(/−/g,'-').replace(/×/g,'*').replace(/÷/g,'/')
+    .replace(/[·⋅∙]/g,'*')
     .replace(/²/g,'^2').replace(/³/g,'^3');
 }
 function tokenize(src){
@@ -980,6 +980,7 @@ function tokenize(src){
     if ('+-*/^(),!{}:<>[]=~'.includes(c)){
       if ((c==='<'||c==='>')&&src[i+1]==='='){ tokens.push({t:'op',v:c+'='}); i+=2; continue; }
       if (c==='!'&&src[i+1]==='='){ tokens.push({t:'op',v:'!='}); i+=2; continue; }
+      if (c==='='&&src[i+1]==='='){ tokens.push({t:'op',v:'=='}); i+=2; continue; }
       tokens.push({ t:'op', v:c }); i++; continue;
     }
     throw new Error('Unexpected character "' + c + '"');
@@ -1174,7 +1175,7 @@ function splitTopLevel(s, sep){
 }
 function findTopLevelChar(s, ch){ let depth = 0; for (let i = 0; i < s.length; i++){ const c = s[i]; if ('([{'.includes(c)) depth++; else if (')]}'.includes(c)) depth--; else if (depth === 0 && c === ch) return i; } return -1; }
 function splitComparison(s){
-  const ops = ['<=','>=','!=','=','<','>','~']; let depth = 0;
+  const ops = ['==','<=','>=','!=','=','<','>','~']; let depth = 0;
   for (let i = 0; i < s.length; i++){ const c = s[i]; if ('([{'.includes(c)) depth++; else if (')]}'.includes(c)) depth--; else if (depth === 0){ for (const op of ops) if (s.startsWith(op, i)) return { lhs: s.slice(0,i).trim(), op, rhs: s.slice(i+op.length).trim() }; } }
   return null;
 }
@@ -1224,7 +1225,7 @@ function getScope(){
   return s;
 }
 function safeEval(fn, x, y, scope){
-  try { const v = fn({ x, y, t:x, theta:x, ...scope }); const r = toReal(v); return (typeof r === 'number' && isFinite(r)) ? r : null; } catch (err){ return null; }
+  try { const v = fn({ ...scope, x, y, t:x, theta:x }); const r = toReal(v); return (typeof r === 'number' && isFinite(r)) ? r : null; } catch (err){ return null; }
 }
 function renderGraphTabs(){
   const box = document.getElementById('graphTabs'); box.innerHTML = '';
@@ -1235,7 +1236,11 @@ function renderGraphTabs(){
     box.appendChild(b);
   });
   const add = document.createElement('button'); add.textContent = '+'; add.className = 'add'; add.title = 'New graph';
-  add.addEventListener('click', () => { const t = { id: nextGraphId++, name: 'T'+nextGraphId, expressions:[], sliders:{}, userFuncs:{}, listVars:{}, regressionResults:{} }; graphTabs.push(t); switchGraph(t.id); renderGraphTabs(); });
+  add.addEventListener('click', () => {
+    const newId = nextGraphId++;
+    const t = { id: newId, name: 'T'+newId, expressions:[], sliders:{}, userFuncs:{}, listVars:{}, regressionResults:{} };
+    graphTabs.push(t); switchGraph(t.id); renderGraphTabs();
+  });
   box.appendChild(add);
 }
 function switchGraph(id){
@@ -1299,7 +1304,7 @@ function analyze(e){
     try {
       const astL = parseExpression(tokenize(lhs)), astR = parseExpression(tokenize(rhs));
       const allFree = new Set([...findFreeVars(astL), ...findFreeVars(astR)]);
-      if (op === '='){ e.kind = 'implicit'; e.fn = scope => toReal(evaluate(astL, scope)) - toReal(evaluate(astR, scope)); }
+      if (op === '=' || op === '=='){ e.kind = 'implicit'; e.fn = scope => toReal(evaluate(astL, scope)) - toReal(evaluate(astR, scope)); }
       else if (op === '<' || op === '>' || op === '<=' || op === '>='){ e.kind = 'inequality'; e.op = op; e.fn = scope => { const a = toReal(evaluate(astL, scope)), b = toReal(evaluate(astR, scope)); switch (op){ case '<': return a<b?1:-1; case '>': return a>b?1:-1; case '<=': return a<=b?1:-1; case '>=': return a>=b?1:-1; } return -1; }; }
       else throw new Error('Unsupported');
       e.free = [...allFree];
@@ -1349,7 +1354,7 @@ function renderExplicit(e, scope){
   for (let px = 0; px <= view.W; px++){
     const x = pxToX(px);
     if (e.restriction && !e.restriction({ x, ...scope })){ started = false; prevPy = null; continue; }
-    let y; try { y = toReal(e.fn({ x, ...scope })); } catch (err){ y = NaN; }
+    let y; try { y = toReal(e.fn({ ...scope, x })); } catch (err){ y = NaN; }
     if (typeof y !== 'number' || !isFinite(y)){ started = false; prevPy = null; continue; }
     const py = yToPx(y);
     if (prevPy !== null && Math.abs(py - prevPy) > view.H*3) started = false;
@@ -1359,7 +1364,7 @@ function renderExplicit(e, scope){
   ctx.stroke(); ctx.globalAlpha = 1; ctx.setLineDash([]);
 }
 function renderImplicit(e, scope){
-  const f = (x,y) => { try { const v = e.fn({ x, y, ...scope }); return isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : null; } catch (err){ return null; } };
+  const f = (x,y) => { try { const v = e.fn({ ...scope, x, y }); return isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : null; } catch (err){ return null; } };
   const segs = marchingSquares(f, pxToX(0), pxToX(view.W), pxToY(view.H), pxToY(0), 130);
   ctx.strokeStyle = e.color; ctx.globalAlpha = e.opacity; setLineStyle(e.lineStyle); ctx.lineWidth = 2;
   ctx.beginPath();
@@ -1367,7 +1372,7 @@ function renderImplicit(e, scope){
   ctx.stroke(); ctx.globalAlpha = 1; ctx.setLineDash([]);
 }
 function renderInequality(e, scope){
-  const f = (x,y) => { try { const v = e.fn({ x, y, ...scope }); return isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : null; } catch (err){ return null; } };
+  const f = (x,y) => { try { const v = e.fn({ ...scope, x, y }); return isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : null; } catch (err){ return null; } };
   const pxSize = 5; ctx.fillStyle = e.color; ctx.globalAlpha = e.opacity*0.16;
   for (let py = 0; py < view.H; py += pxSize) for (let px = 0; px < view.W; px += pxSize){ const v = f(pxToX(px+pxSize/2), pxToY(py+pxSize/2)); if (v !== null && v > 0) ctx.fillRect(px, py, pxSize, pxSize); }
   ctx.globalAlpha = 1;
@@ -1382,7 +1387,7 @@ function renderPolar(e, scope){
   ctx.beginPath(); const N = 2000; let started = false, lastPx = null, lastPy = null;
   for (let i = 0; i <= N; i++){
     const theta = (i/N)*Math.PI*2; let r;
-    try { r = toReal(e.fn({ theta, ...scope })); } catch (err){ r = NaN; }
+    try { r = toReal(e.fn({ ...scope, theta })); } catch (err){ r = NaN; }
     if (typeof r !== 'number' || !isFinite(r)){ started = false; lastPx = null; continue; }
     const x = r*Math.cos(theta), y = r*Math.sin(theta);
     const px = xToPx(x), py = yToPx(y);
@@ -1397,7 +1402,7 @@ function renderParametric(e, scope){
   ctx.beginPath(); const N = 2000, tmin = -10, tmax = 10; let started = false;
   for (let i = 0; i <= N; i++){
     const t = tmin + (i/N)*(tmax-tmin);
-    let x, y; try { x = toReal(e.fx({ t, ...scope })); y = toReal(e.fy({ t, ...scope })); } catch (err){ started = false; continue; }
+    let x, y; try { x = toReal(e.fx({ ...scope, t })); y = toReal(e.fy({ ...scope, t })); } catch (err){ started = false; continue; }
     if (!isFinite(x) || !isFinite(y)){ started = false; continue; }
     const px = xToPx(x), py = yToPx(y);
     if (!started){ ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
@@ -1409,7 +1414,7 @@ function renderPiecewise(e, scope){
   ctx.beginPath(); let started = false, prevPy = null;
   for (let px = 0; px <= view.W; px++){
     const x = pxToX(px); let y = NaN;
-    for (const p of e.pieces){ let cond; try { cond = toReal(evaluate(p.cond, { x, ...scope })); } catch (err){ cond = 0; } if (cond){ try { y = toReal(evaluate(p.value, { x, ...scope })); } catch (err){ y = NaN; } break; } }
+    for (const p of e.pieces){ let cond; try { cond = toReal(evaluate(p.cond, { ...scope, x })); } catch (err){ cond = 0; } if (cond){ try { y = toReal(evaluate(p.value, { ...scope, x })); } catch (err){ y = NaN; } break; } }
     if (typeof y !== 'number' || !isFinite(y)){ started = false; prevPy = null; continue; }
     const py = yToPx(y);
     if (prevPy !== null && Math.abs(py - prevPy) > view.H*3) started = false;
@@ -1451,7 +1456,7 @@ function renderSlopeField(e, scope){
   ctx.strokeStyle = e.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.4; ctx.beginPath();
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++){
     const x = xmin + i*dx, y = ymin + j*dy; let slope;
-    try { slope = toReal(e.fn({ x, y, ...scope })); } catch (err){ continue; }
+    try { slope = toReal(e.fn({ ...scope, x, y })); } catch (err){ continue; }
     if (!isFinite(slope)) continue;
     const ang = Math.atan(slope); const cx = xToPx(x), cy = yToPx(y);
     const dxp = Math.cos(ang)*step, dyp = -Math.sin(ang)*step;
@@ -1467,7 +1472,7 @@ function renderVectorField(scope){
   ctx.strokeStyle = vectorField.color || '#b06cff'; ctx.globalAlpha = 0.75; ctx.lineWidth = 1.4;
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++){
     const x = xmin + i*dx, y = ymin + j*dy;
-    let px, py; try { px = toReal(vectorField.Pfn({ x, y, ...scope })); py = toReal(vectorField.Qfn({ x, y, ...scope })); } catch (err){ continue; }
+    let px, py; try { px = toReal(vectorField.Pfn({ ...scope, x, y })); py = toReal(vectorField.Qfn({ ...scope, x, y })); } catch (err){ continue; }
     if (!isFinite(px) || !isFinite(py)) continue;
     const mag = Math.hypot(px, py); if (mag < 1e-9) continue;
     const ux = px/mag, uy = py/mag; const sx = xToPx(x), sy = yToPx(y);
@@ -1569,7 +1574,7 @@ function draw(){
     const x = pxToX(pointer.px);
     expressions.forEach(e => {
       if (!e.visible || e.kind !== 'explicit' || !e.fn) return;
-      let y; try { y = toReal(e.fn({ x, ...scope })); } catch (err){ return; }
+      let y; try { y = toReal(e.fn({ ...scope, x })); } catch (err){ return; }
       if (typeof y !== 'number' || !isFinite(y)) return;
       const py = yToPx(y); if (py < -50 || py > H+50) return;
       ctx.beginPath(); ctx.arc(pointer.px, py, 4.5, 0, Math.PI*2); ctx.fillStyle = e.color; ctx.fill();
@@ -1651,7 +1656,7 @@ function addExplicitPoints(e, xmin, xmax, scope){
   }
 }
 function addImplicitPoints(e, xmin, xmax, ymin, ymax, scope){
-  const f = (x,y) => { try { const v = e.fn({ x, y, ...scope }); return isFinite(v) ? v : null; } catch (err){ return null; } };
+  const f = (x,y) => { try { const v = e.fn({ ...scope, x, y }); return isFinite(v) ? v : null; } catch (err){ return null; } };
   [['x', ymin, ymax, 0, true], ['y', xmin, xmax, 0, false]].forEach(([_, lo, hi, _2, isX]) => {
     const N = 700; const h = (hi-lo)/N;
     const at = isX ? (t) => f(t, 0) : (t) => f(0, t);
@@ -1668,7 +1673,7 @@ function addImplicitPoints(e, xmin, xmax, ymin, ymax, scope){
   });
 }
 function addPolarPoints(e, scope){
-  const N = 1000; const g = theta => { try { const v = toReal(e.fn({ theta, ...scope })); return isFinite(v) ? v : null; } catch (err){ return null; } };
+  const N = 1000; const g = theta => { try { const v = toReal(e.fn({ ...scope, theta })); return isFinite(v) ? v : null; } catch (err){ return null; } };
   let prev = g(0);
   for (let i = 1; i <= N; i++){
     const theta = (i/N)*Math.PI*2, cur = g(theta);
@@ -1690,7 +1695,7 @@ function addParametricPoints(e, scope){
   const xs = new Array(N+1), ys = new Array(N+1);
   for (let i = 0; i <= N; i++){
     const t = tmin + i*h;
-    try { xs[i] = toReal(e.fx({ t, ...scope })); ys[i] = toReal(e.fy({ t, ...scope })); } catch (err){ xs[i] = NaN; ys[i] = NaN; }
+    try { xs[i] = toReal(e.fx({ ...scope, t })); ys[i] = toReal(e.fy({ ...scope, t })); } catch (err){ xs[i] = NaN; ys[i] = NaN; }
     if (!isFinite(xs[i])) xs[i] = null; if (!isFinite(ys[i])) ys[i] = null;
   }
   for (let i = 1; i <= N; i++){
@@ -1698,8 +1703,8 @@ function addParametricPoints(e, scope){
     if (y0 === null || y1 === null) continue;
     if (y0 === 0 || y1 === 0 || y0*y1 < 0){
       let a = tmin + (i-1)*h, b = tmin + i*h, fa = y0;
-      for (let k = 0; k < 50; k++){ const m = (a+b)/2; let ym; try { ym = toReal(e.fy({ t: m, ...scope })); } catch (err){ break; } if (!isFinite(ym)) break; if (Math.abs(ym) < 1e-9){ a = b = m; break; } if (fa*ym < 0){ b = m; } else { a = m; fa = ym; } }
-      const tm = (a+b)/2; let xm; try { xm = toReal(e.fx({ t: tm, ...scope })); } catch (err){ continue; }
+      for (let k = 0; k < 50; k++){ const m = (a+b)/2; let ym; try { ym = toReal(e.fy({ ...scope, t: m })); } catch (err){ break; } if (!isFinite(ym)) break; if (Math.abs(ym) < 1e-9){ a = b = m; break; } if (fa*ym < 0){ b = m; } else { a = m; fa = ym; } }
+      const tm = (a+b)/2; let xm; try { xm = toReal(e.fx({ ...scope, t: tm })); } catch (err){ continue; }
       if (isFinite(xm)) keyPoints.push({ x: xm, y: 0, type: 'root', color: e.color });
     }
   }
@@ -1707,7 +1712,7 @@ function addParametricPoints(e, scope){
 function addPiecewisePoints(e, xmin, xmax, scope){
   const N = 1400, h = (xmax-xmin)/N;
   const evalPiece = x => {
-    for (const p of e.pieces){ let cond; try { cond = toReal(evaluate(p.cond, { x, ...scope })); } catch (err){ cond = 0; } if (cond){ try { return toReal(evaluate(p.value, { x, ...scope })); } catch (err){ return null; } } }
+    for (const p of e.pieces){ let cond; try { cond = toReal(evaluate(p.cond, { ...scope, x })); } catch (err){ cond = 0; } if (cond){ try { return toReal(evaluate(p.value, { ...scope, x })); } catch (err){ return null; } } }
     return null;
   };
   const g = x => { const v = evalPiece(x); return v === null ? 0 : v; };
@@ -1726,7 +1731,7 @@ function addPiecewisePoints(e, xmin, xmax, scope){
   let prevIdx = -1;
   for (let i = 0; i <= N; i++){
     const x = xmin + i*h; let activeIdx = -1;
-    for (let k = 0; k < e.pieces.length; k++){ let cond; try { cond = toReal(evaluate(e.pieces[k].cond, { x, ...scope })); } catch (err){ cond = 0; } if (cond){ activeIdx = k; break; } }
+    for (let k = 0; k < e.pieces.length; k++){ let cond; try { cond = toReal(evaluate(e.pieces[k].cond, { ...scope, x })); } catch (err){ cond = 0; } if (cond){ activeIdx = k; break; } }
     if (prevIdx !== -1 && activeIdx !== -1 && activeIdx !== prevIdx){ const y = evalPiece(x); if (y !== null && isFinite(y)) keyPoints.push({ x, y, type: 'breakpoint', color: e.color }); }
     prevIdx = activeIdx;
   }
@@ -1790,7 +1795,15 @@ function renderExprList(){
     const input = document.createElement('input');
     input.value = e.src; input.placeholder = 'e.g. x^2 - 3, x^2+y^2=25'; input.spellcheck = false;
     input.addEventListener('focus', () => { activeInput = input; });
-    input.addEventListener('input', () => { e.src = input.value; analyze(e); row.classList.toggle('err', !!e.error); updateSliders(); draw(); scheduleKeyPointUpdate(); updateRegressions(); });
+    input.addEventListener('input', () => {
+      e.src = input.value;
+      analyze(e);
+      row.classList.toggle('err', !!e.error);
+      draw();
+      scheduleKeyPointUpdate();
+      clearTimeout(input._slT);
+      input._slT = setTimeout(() => { updateSliders(); updateRegressions(); }, 220);
+    });
     input.addEventListener('blur', () => pushHistory());
     input.addEventListener('keydown', ev => { if (ev.key === 'Enter'){ ev.preventDefault(); input.blur(); addExpression(''); } });
     const del = document.createElement('button');
@@ -1801,8 +1814,15 @@ function renderExprList(){
 }
 function addExpression(src, extra){
   const e = { id: nextId++, src: src || '', color: COLORS[(nextId-1) % COLORS.length], visible: true, lineStyle: 'solid', opacity: 1, kind: 'empty', error: null, free: [] };
-  if (extra) Object.assign(e, extra);
-  analyze(e); expressions.push(e); renderExprList(); updateSliders(); draw(); scheduleKeyPointUpdate(0); updateRegressions();
+  if (extra){
+    Object.assign(e, extra);
+    // If the caller supplied a concrete kind (e.g. 'riemann'), trust it and
+    // skip analyze() — otherwise analyze() resets e.kind to 'empty'.
+    if (!extra.kind || extra.kind === 'empty') analyze(e);
+  } else {
+    analyze(e);
+  }
+  expressions.push(e); renderExprList(); updateSliders(); draw(); scheduleKeyPointUpdate(0); updateRegressions();
   if (!extra){ const inputs = document.querySelectorAll('#exprList input'); if (inputs.length){ const last = inputs[inputs.length-1]; last.focus(); activeInput = last; } }
   pushHistory();
 }
@@ -1887,7 +1907,11 @@ function updateRegressions(){
   });
 }
 function fitRegression(x, y, model){
-  const clean = model.replace(/\s+/g, '');
+  // Expand implicit products between adjacent single letters, e.g. "mx" → "m*x",
+  // "ax^2" → "a*x^2". Skip when the second letter starts a function call ("sin(").
+  // This mirrors how Desmos interprets regression models.
+  let expanded = model.replace(/([a-zA-Z])([a-zA-Z])(?!\()/g, '$1*$2');
+  const clean = expanded.replace(/\s+/g, '');
   const varNames = []; const re = /[a-zA-Z_]\w*/g; let m;
   while ((m = re.exec(clean))){ const n = m[0]; if (n === 'x' || n in FUNCS) continue; if (!varNames.includes(n)) varNames.push(n); }
   if (!varNames.length) return { error: 'No parameters' };
@@ -1964,14 +1988,19 @@ function snapshot(){ return JSON.stringify({ expressions: expressions.map(e => (
 function restoreState(state){
   try {
     const s = typeof state === 'string' ? JSON.parse(state) : state;
-    expressions.length = 0; userFuncs = {}; nextId = 1; listVars = {}; regressionResults = {};
+    expressions.length = 0; nextId = 1;
+    Object.keys(userFuncs).forEach(k => delete userFuncs[k]);
+    Object.keys(listVars).forEach(k => delete listVars[k]);
+    Object.keys(regressionResults).forEach(k => delete regressionResults[k]);
     s.expressions.forEach(x => {
       const e = { id: nextId++, src: x.src, color: x.color, visible: x.visible, lineStyle: x.lineStyle || 'solid', opacity: x.opacity ?? 1, kind: 'empty', error: null, free: [] };
       if (x.kind === 'riemann' && x.params){ try { const fnAst = parseExpression(tokenize(x.params.fnSrc)); e.kind = 'riemann'; e.src = 'riemann: ' + x.params.fnSrc; e.params = { fnSrc: x.params.fnSrc, fn: scope => evaluate(fnAst, scope), a: x.params.a, b: x.params.b, n: x.params.n, method: x.params.method }; } catch (err){ analyze(e); } } else analyze(e);
       expressions.push(e);
     });
-    sliders = s.sliders || {}; Object.values(sliders).forEach(s => { s.playing = false; });
-    if (s.listVars) listVars = s.listVars;
+    Object.keys(sliders).forEach(k => delete sliders[k]);
+    if (s.sliders) Object.assign(sliders, s.sliders);
+    Object.values(sliders).forEach(sl => { sl.playing = false; });
+    if (s.listVars) Object.assign(listVars, s.listVars);
     if (s.view){ view.cx = s.view.cx; view.cy = s.view.cy; view.scale = s.view.scale; }
     if (s.gridType) document.getElementById('gridType').value = s.gridType;
     if (s.angleMode){ angleMode = s.angleMode; document.getElementById('angleMode').value = s.angleMode; }
@@ -2090,14 +2119,14 @@ function solveStepByStep(lhsStr, rhsStr){
 }
 document.getElementById('eq_solve').addEventListener('click', () => {
   const raw = document.getElementById('eq_input').value.trim(); const out = document.getElementById('eq_out');
-  const split = splitComparison(raw); if (!split || split.op !== '='){ out.innerHTML = row('Error','Use "=" form','bad'); return; }
+  const split = splitComparison(raw); if (!split || (split.op !== '=' && split.op !== '==')){ out.innerHTML = row('Error','Use "=" form','bad'); return; }
   const result = solveStepByStep(split.lhs, split.rhs); if (result.error){ out.innerHTML = row('Error', result.error, 'bad'); return; }
   let html = ''; result.steps.forEach((s, i) => html += stepRow(i+1, s.body, s.why));
   if (result.solution?.length) html += '<div style="margin-top:8px;">' + row('Solution', result.solution.map(x => '$x = ' + fmt(x, 6) + '$').join(' or '), 'hi') + '</div>';
   else if (result.complex) html += '<div style="margin-top:8px;">' + row('Complex', `$x = ${fmt(result.complex[0])} \\pm ${fmt(result.complex[1])}i$`, 'warn') + '</div>';
   out.innerHTML = html; katexRender(out);
 });
-function renderQuad(){ const a = val('q_a'), b = val('q_b'), c = val('q_c'); const out = document.getElementById('q_out'); if (![a,b,c].every(isFinite)){ out.innerHTML = row('Status','Enter a,b,c','warn'); return; } if (Math.abs(a) < 1e-12){ out.innerHTML = row('Type','Linear') + row('Solution','$x = '+frac(-c,b)+'$', 'hi'); katexRender(out); return; } const disc = b*b - 4*a*c, h = -b/(2*a), k = c - (b*b)/(4*a); let html = ''; html += row('Standard', `$${fmt(a)}x^2 + ${fmt(b)}x + ${fmt(c)}$`); html += row('Vertex form', `$y = ${vertexFormStr(a,h,k).replace('−','-').replace('²','^2')}$`, 'hi'); html += row('Vertex', `$(${fmt(h)}, ${fmt(k)})$`, 'hi'); html += row('Discriminant', `$\\Delta = ${fmt(disc)}$`); if (disc >= 0){ const r1 = (-b+Math.sqrt(disc))/(2*a), r2 = (-b-Math.sqrt(disc))/(2*a); html += row('Roots', `$x = ${fmt(r1)}$ or $x = ${fmt(r2)}$`, 'hi'); } else html += row('Roots', 'Complex', 'warn'); out.innerHTML = html; katexRender(out); }
+function renderQuad(){ const a = val('q_a'), b = val('q_b'), c = val('q_c'); const out = document.getElementById('q_out'); if (![a,b,c].every(isFinite)){ out.innerHTML = row('Status','Enter a,b,c','warn'); return; } if (Math.abs(a) < 1e-12){ out.innerHTML = row('Type','Linear') + row('Solution','$x = '+frac(-c,b)+'$', 'hi'); katexRender(out); return; } const disc = b*b - 4*a*c, h = -b/(2*a), k = c - (b*b)/(4*a); let html = ''; html += row('Standard', `$${fmt(a)}x^2 + ${fmt(b)}x + ${fmt(c)}$`); html += row('Vertex form', `$y = ${vertexFormStr(a,h,k).replace(/−/g,'-').replace(/²/g,'^2')}$`, 'hi'); html += row('Vertex', `$(${fmt(h)}, ${fmt(k)})$`, 'hi'); html += row('Discriminant', `$\\Delta = ${fmt(disc)}$`); if (disc >= 0){ const r1 = (-b+Math.sqrt(disc))/(2*a), r2 = (-b-Math.sqrt(disc))/(2*a); html += row('Roots', `$x = ${fmt(r1)}$ or $x = ${fmt(r2)}$`, 'hi'); } else html += row('Roots', 'Complex', 'warn'); out.innerHTML = html; katexRender(out); }
 document.getElementById('q_graph').addEventListener('click', () => { const a = val('q_a'), b = val('q_b'), c = val('q_c'); if (![a,b,c].every(isFinite)) return; addExpression('('+a+')x^2 + ('+b+')x + ('+c+')'); document.querySelector('nav.tabs button[data-tab="graph"]').click(); });
 ['q_a','q_b','q_c'].forEach(id => document.getElementById(id).addEventListener('input', renderQuad));
 function renderX(){ const S = val('x_sum'), P = val('x_prod'); const out = document.getElementById('x_out'); if (![S,P].every(isFinite)){ out.innerHTML = row('Status','Enter sum and product','warn'); return; } const disc = S*S - 4*P; let html = row('Puzzle','Sum = '+fmt(S)+' , Product = '+fmt(P)); if (disc < 0) html += row('Result','No real pair','bad'); else { const r1 = (S+Math.sqrt(disc))/2, r2 = (S-Math.sqrt(disc))/2; html += row('The two numbers', `$x_1 = ${fmt(r1)}, x_2 = ${fmt(r2)}$`, 'hi'); if (Number.isInteger(S) && Number.isInteger(P) && Number.isInteger(Math.sqrt(disc))){ const m = Math.round(r1), n = Math.round(r2); const sgn = v => v>=0 ? '(x + '+v+')' : '(x - '+(-v)+')'; html += row('Factors', sgn(m)+sgn(n), 'hi'); } } out.innerHTML = html; katexRender(out); }
@@ -2278,7 +2307,7 @@ document.getElementById('csv_go').addEventListener('click', () => {
 document.getElementById('nt_prime').addEventListener('click', () => { let n = Math.abs(parseInt(document.getElementById('nt_n').value)); const out = document.getElementById('nt_out'); if (!Number.isFinite(n) || n < 2){ out.innerHTML = row('Error','Enter n ≥ 2','bad'); return; } const orig = n, factors = []; for (let p = 2; p*p <= n; p++){ let c = 0; while (n % p === 0){ n /= p; c++; } if (c) factors.push([p, c]); } if (n > 1) factors.push([n, 1]); let html = row('n', orig); html += row('Factorization', `$${orig} = ${factors.map(([p,c]) => c === 1 ? p : p + '^{' + c + '}').join(' \\cdot ')}$`, 'hi'); html += row('Prime?', factors.length === 1 && factors[0][1] === 1 ? 'Yes' : 'No'); out.innerHTML = html; katexRender(out); });
 document.getElementById('nt_gl').addEventListener('click', () => { const a = parseInt(document.getElementById('nt_a').value), b = parseInt(document.getElementById('nt_b').value); const out = document.getElementById('nt_gl_out'); if (!Number.isFinite(a) || !Number.isFinite(b)){ out.innerHTML = row('Error','Enter integers','bad'); return; } out.innerHTML = row('gcd', `$\\gcd(${a}, ${b}) = ${gcd2(a, b)}$`, 'hi') + row('lcm', `$\\text{lcm}(${a}, ${b}) = ${lcm2(a, b)}$`, 'hi'); katexRender(out); });
 document.getElementById('nt_mod').addEventListener('click', () => { const a = parseInt(document.getElementById('nt_ma').value), b = parseInt(document.getElementById('nt_mb').value), m = parseInt(document.getElementById('nt_mm').value); const out = document.getElementById('nt_mod_out'); if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(m) || m === 0){ out.innerHTML = row('Error','Check inputs','bad'); return; } const mod = (v) => ((v % m) + m) % m; let html = ''; html += row('a + b mod m', mod(a + b)); html += row('a × b mod m', mod(a * b)); html += row('a mod m', mod(a)); html += row('b mod m', mod(b)); const g = gcd2(a, m); if (g === 1){ let x = 0, y = 1, u = 1, v = 0, aa = a, mm = m; while (aa !== 0){ const q = Math.floor(mm/aa); [x, u] = [u, x - q*u]; [y, v] = [v, y - q*v]; [mm, aa] = [aa, mm - q*aa]; } html += row('a⁻¹ mod m', mod(x), 'hi'); } else html += row('a⁻¹ mod m', 'None (gcd ≠ 1)','warn'); out.innerHTML = html; });
-document.getElementById('conic_go').addEventListener('click', () => { const src = document.getElementById('conic_input').value.trim(); const out = document.getElementById('conic_out'); const split = splitComparison(src); if (!split || split.op !== '='){ out.innerHTML = row('Error','= 0 form','bad'); return; } try { const f = compile(split.lhs); const F = f({ x: 0, y: 0 }); const A = (f({ x: 1, y: 0 }) - 2*F + f({ x: -1, y: 0 }))/2; const C = (f({ x: 0, y: 1 }) - 2*F + f({ x: 0, y: -1 }))/2; const B = (f({ x: 1, y: 1 }) - f({ x: 1, y: -1 }) - f({ x: -1, y: 1 }) + f({ x: -1, y: -1 }))/4; const Dv = f({ x: 1, y: 0 }) - F - A, Ev = f({ x: 0, y: 1 }) - F - C; let html = row('A', fmt(A, 4)) + row('B', fmt(B, 4)) + row('C', fmt(C, 4)); const disc = B*B - 4*A*C; let type; if (Math.abs(disc) < 1e-6) type = 'Parabola'; else if (disc < 0 && Math.abs(A - C) < 1e-6 && Math.abs(B) < 1e-6) type = 'Circle'; else if (disc < 0) type = 'Ellipse'; else type = 'Hyperbola'; html += row('B² − 4AC', `$B^2 - 4AC = ${fmt(disc, 4)}$`); html += row('Type', type, 'hi'); if (type === 'Circle' && Math.abs(A) > 1e-9){ const h = -Dv/(2*A), k = -Ev/(2*A), r2 = h*h + k*k - F/A; if (r2 > 0){ html += row('Center', `$(${fmt(h, 4)}, ${fmt(k, 4)})$`, 'hi'); html += row('Radius', `$r = ${fmt(Math.sqrt(r2), 4)}$`, 'hi'); } } out.innerHTML = html; katexRender(out); } catch (err){ out.innerHTML = row('Error', err.message, 'bad'); } });
+document.getElementById('conic_go').addEventListener('click', () => { const src = document.getElementById('conic_input').value.trim(); const out = document.getElementById('conic_out'); const split = splitComparison(src); if (!split || (split.op !== '=' && split.op !== '==')){ out.innerHTML = row('Error','= 0 form','bad'); return; } try { const f = compile(split.lhs); const F = f({ x: 0, y: 0 }); const A = (f({ x: 1, y: 0 }) - 2*F + f({ x: -1, y: 0 }))/2; const C = (f({ x: 0, y: 1 }) - 2*F + f({ x: 0, y: -1 }))/2; const B = (f({ x: 1, y: 1 }) - f({ x: 1, y: -1 }) - f({ x: -1, y: 1 }) + f({ x: -1, y: -1 }))/4; const Dv = f({ x: 1, y: 0 }) - F - A, Ev = f({ x: 0, y: 1 }) - F - C; let html = row('A', fmt(A, 4)) + row('B', fmt(B, 4)) + row('C', fmt(C, 4)); const disc = B*B - 4*A*C; let type; if (Math.abs(disc) < 1e-6) type = 'Parabola'; else if (disc < 0 && Math.abs(A - C) < 1e-6 && Math.abs(B) < 1e-6) type = 'Circle'; else if (disc < 0) type = 'Ellipse'; else type = 'Hyperbola'; html += row('B² − 4AC', `$B^2 - 4AC = ${fmt(disc, 4)}$`); html += row('Type', type, 'hi'); if (type === 'Circle' && Math.abs(A) > 1e-9){ const h = -Dv/(2*A), k = -Ev/(2*A), r2 = h*h + k*k - F/A; if (r2 > 0){ html += row('Center', `$(${fmt(h, 4)}, ${fmt(k, 4)})$`, 'hi'); html += row('Radius', `$r = ${fmt(Math.sqrt(r2), 4)}$`, 'hi'); } } out.innerHTML = html; katexRender(out); } catch (err){ out.innerHTML = row('Error', err.message, 'bad'); } });
 document.getElementById('seq_go').addEventListener('click', () => { const termsStr = document.getElementById('seq_terms').value, n = parseInt(document.getElementById('seq_n').value); const out = document.getElementById('seq_out'); const terms = termsStr.split(',').map(s => parseFloat(s.trim())).filter(x => isFinite(x)); if (terms.length < 2){ out.innerHTML = row('Error','Need 2+','bad'); return; } const diffs = terms.slice(1).map((t, i) => t - terms[i]), ratios = terms.slice(1).map((t, i) => t / terms[i]); const isA = diffs.every(d => Math.abs(d - diffs[0]) < 1e-9), isG = ratios.every(r => Math.abs(r - ratios[0]) < 1e-9); let html = row('Terms', terms.join(', ')); if (isA){ const d = diffs[0], a1 = terms[0]; const an = a1 + (n-1)*d, Sn = n * (a1 + an) / 2; html += row('Type', 'Arithmetic', 'hi'); html += row('d', fmt(d)); html += row('a' + n, fmt(an), 'hi'); html += row('Sum', fmt(Sn), 'hi'); } else if (isG){ const r = ratios[0], a1 = terms[0]; const an = a1 * Math.pow(r, n-1); let Sn = Math.abs(r - 1) < 1e-9 ? n * a1 : a1 * (1 - Math.pow(r, n)) / (1 - r); html += row('Type', 'Geometric', 'hi'); html += row('r', fmt(r)); html += row('a' + n, fmt(an), 'hi'); html += row('Sum', fmt(Sn), 'hi'); } else html += row('Type', 'Not A or G'); out.innerHTML = html; });
 function renderVertex(){ const a = val('v_a'), h = val('v_h'), k = val('v_k'); const out = document.getElementById('v_out'); if (![a,h,k].every(isFinite)){ out.innerHTML = row('Status','Enter a,h,k','warn'); return; } const b = -2*a*h, c = a*h*h + k; let html = ''; html += row('Vertex form', `$y = ${a === 1 ? '' : a}(x ${h >= 0 ? '-' : '+'} ${Math.abs(h)})^2 ${k >= 0 ? '+' : '-'} ${Math.abs(k)}$`, 'hi'); html += row('Standard', `$y = ${fmt(a)}x^2 ${b>=0?'+':'-'} ${fmt(Math.abs(b))}x ${c>=0?'+':'-'} ${fmt(Math.abs(c))}$`); html += row('Vertex', `$(${fmt(h)}, ${fmt(k)})$`, 'hi'); out.innerHTML = html; katexRender(out); }
 ['v_a','v_h','v_k'].forEach(id => document.getElementById(id).addEventListener('input', renderVertex));
@@ -2347,7 +2376,7 @@ const EXAMPLES = [
   { cat:'complex', title:'Complex sqrt', desc:'sqrt(−4) = 2i', exprs:['y = sqrt(-4)'] },
   { cat:'calculus', title:'Derivative', desc:'Symbolic d/dx', exprs:['y = x^3', 'y = 3x^2'] },
   { cat:'calculus', title:'Slope field', desc:'dy/dx = x − y', exprs:['dy/dx = x - y'] },
-  { cat:'data', title:'Regression', desc:'Line fit', exprs:['x = [1, 2, 3, 4, 5]', 'y = [2.1, 4.2, 6.1, 8.3, 9.9]', 'y ~ mx + b'] },
+  { cat:'data', title:'Regression', desc:'Line fit', exprs:['x = [1, 2, 3, 4, 5]', 'y = [2.1, 4.2, 6.1, 8.3, 9.9]', 'y ~ m*x + b'] },
   { cat:'vector', title:'Rotation field', desc:'P = −y, Q = x', exprs:[] },
   { cat:'systems', title:'Two lines', desc:'Intersect', exprs:['y = 2x + 1', 'y = -x + 4'] },
   { cat:'systems', title:'Line and parabola', desc:'Two points', exprs:['y = x^2', 'y = x + 2'] },
