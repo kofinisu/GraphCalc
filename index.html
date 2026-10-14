@@ -762,7 +762,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/algebrite@1.4.0/dist/algebrite.bundle-for-browser.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/algebrite@1.4.0/algebrite.bundle-for-browser.min.js"></script>
 
 <script>
 /* =========================================================================
@@ -786,7 +786,6 @@ window.addEventListener('load', () => {
   papaReady = typeof Papa !== 'undefined';
   algebriteReady = typeof Algebrite !== 'undefined';
   updateLibStatus();
-  // Re-render all existing outputs with KaTeX
   if (katexReady && settings.katex !== false){
     document.querySelectorAll('.out').forEach(el => katexRender(el));
   }
@@ -805,7 +804,6 @@ function katexRender(el){
     });
   } catch (e) {}
 }
-// Auto-render whenever an .out element changes
 function attachKatexObservers(){
   if (!window.MutationObserver) return;
   const obs = new MutationObserver(muts => {
@@ -867,11 +865,21 @@ document.getElementById('btnSettings').addEventListener('click', () => {
 });
 document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('open'));
 settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.remove('open'); });
-['setBg','setCursor','setText','setAnim','setComplex','setHiContrast','setKatex'].forEach(id => {
-  document.getElementById(id).addEventListener('change', e => {
-    const key = id.replace('set',''); const k = key.charAt(0).toLowerCase()+key.slice(1);
-    settings[k] = e.target.checked; applySettings(); saveSettings();
-    if (id === 'setKatex' && e.target.checked){ document.querySelectorAll('.out').forEach(el => katexRender(el)); }
+
+/* FIXED: setting key map so complex mode persists */
+const SETTING_KEYS = {
+  setBg:'bg', setCursor:'cursor', setText:'text', setAnim:'anim',
+  setComplex:'complexMode', setHiContrast:'hiContrast', setKatex:'katex'
+};
+Object.keys(SETTING_KEYS).forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', e => {
+    settings[SETTING_KEYS[id]] = e.target.checked;
+    applySettings(); saveSettings();
+    if (id === 'setKatex' && e.target.checked){
+      document.querySelectorAll('.out').forEach(el => katexRender(el));
+    }
   });
 });
 document.getElementById('setTheme').addEventListener('change', e => { settings.theme = e.target.value; applySettings(); saveSettings(); });
@@ -888,9 +896,9 @@ function renderColorChoices(){
 }
 document.getElementById('settingsReset').addEventListener('click', () => {
   settings = { ...DEFAULT_SETTINGS }; applySettings(); saveSettings();
-  ['setBg','setCursor','setText','setAnim','setComplex','setHiContrast','setKatex'].forEach(id => {
-    const key = id.replace('set',''); const k = key.charAt(0).toLowerCase()+key.slice(1);
-    document.getElementById(id).checked = settings[k];
+  Object.keys(SETTING_KEYS).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!settings[SETTING_KEYS[id]];
   });
   document.getElementById('setTheme').value = settings.theme;
   renderColorChoices(); updateLibStatus();
@@ -2425,6 +2433,17 @@ renderExprList();
 updateSliders();
 attachKatexObservers();
 requestAnimationFrame(() => { draw(); scheduleKeyPointUpdate(0); pushHistory(); startAnimationLoop(); });
+
+/* =========================================================================
+   SERVICE WORKER REGISTRATION (offline / PWA)
+   ========================================================================= */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => console.log('[SW] Registered scope:', reg.scope))
+      .catch(err => console.warn('[SW] Registration failed:', err));
+  });
+}
 </script>
 </body>
 </html>
