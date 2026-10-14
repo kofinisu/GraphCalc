@@ -1,5 +1,5 @@
 # GraphCalc
-### A Free Open Source Calculator Inspired By Desmos
+### A Free Calculator Inspired By Desmos
 Refresh the webpage if it doesn't load.
 
 
