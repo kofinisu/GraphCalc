@@ -1,4 +1,3 @@
-```markdown
 # GraphCalc Pro
 
 A self-contained, single-file graphing and algebra calculator inspired by Desmos.
